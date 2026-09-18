@@ -1,16 +1,11 @@
-/*
-  FujitsuAC - ESP32 libary for controlling FujitsuAC through MQTT
-  Copyright (c) 2025 Benas Ragauskas. All rights reserved.
-  
-  Project home: https://github.com/Benas09/FujitsuAC
-*/
-
 #pragma once
 
 //WiFi
 #include <WiFi.h>
 
 // Access point
+#include <WebServer.h>
+#include <LittleFS.h>
 #include <NetworkClient.h>
 #include <WiFiAP.h>
 
@@ -32,9 +27,9 @@ namespace FujitsuAC {
     	public:
             FujitsuAC(
                 uart_port_t uartPort,
-                int rxPin, 
-                int txPin, 
-                int ledWPin, 
+                int rxPin,
+                int txPin,
+                int ledWPin,
                 int ledRPin,
                 int resetButtonPin
             );
@@ -42,10 +37,12 @@ namespace FujitsuAC {
 			void setup();
 	        void loop();
 
+            void clearConfig();
+
         private:
             Config _config;
 
-            NetworkServer server;
+            WebServer server;
 
             WiFiClient espClient;
             PubSubClient _mqttClient;
@@ -53,8 +50,9 @@ namespace FujitsuAC {
             IMqttBridge* bridge = nullptr;
 
             uint32_t fallbackApCreatedAt = 0;
+            bool webOtaAuthorized = false;
+            bool littleFsReady = false;
 
-            void clearConfig();
             String getConfigValue(String qs, String key);
             String urlDecode(const String &s);
             void parseConfig(String content);
@@ -64,9 +62,23 @@ namespace FujitsuAC {
             bool isAPState();
             bool createAP();
             void setupOTA();
-            void handleHttp();
+            void setupWebServer();
 
             void connectToWifi();
             void connectToMqtt();
+            bool checkOtaWebAuth();
+            String getStoredOtaPassword();
+            String loadResource(const char *path);
+            String renderResource(const char *path);
+            void sendResource(const char *path, const char *contentType);
+            String profilesHtml() const;
+            String jsonEscape(const String &value) const;
+            void handleRoot();
+            void handleApiStatus();
+            void handleAction();
+            void handleConfigGet();
+            void handleConfigPost();
+            void handleRestart();
+            void handleClearConfig();
     };
 }

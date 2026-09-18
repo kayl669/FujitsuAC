@@ -31,6 +31,9 @@ namespace FujitsuAC {
 
         _controller->loop();
 
+        const uint32_t now = millis();
+        this->updateEnergyEstimate(now);
+
         if (!this->isPoweringOn) {
             return;
         }
@@ -40,8 +43,6 @@ namespace FujitsuAC {
 
             return;
         }
-
-        uint32_t now = millis();
 
         if ((now - this->powerOnRetryStartedMillis) >= this->powerOnRetryTimeoutMillis) {
             this->stopPowerOnRetry();
@@ -57,6 +58,14 @@ namespace FujitsuAC {
         this->debug("info", "TFSXW1: Initialize controller");
 
         _controller = new TFSXW1Controller(*_uart);
+
+        _prefs.begin("fujitsu_energy", false);
+        _energyKwh = _prefs.getFloat("total-kwh", 0.0f);
+        _prefs.end();
+
+        _powerWatts = _config.getStandbyPower();
+        _lastUpdate = millis();
+        _lastSave = _lastUpdate;
 
         this->registerBaseEntities();
         this->registerSwitch(TFSXW1Controller::Address::Power);
@@ -193,7 +202,7 @@ namespace FujitsuAC {
         p += this->deviceConfig;
         p += "}";
 
-        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_actual_temp/config", _config.getUniqueId().c_str());
+        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/actual_temp/config", _config.getUniqueId().c_str());
         this->mqttClient.publish(topic, p.c_str(), true);
 
         p = "{";
@@ -208,8 +217,37 @@ namespace FujitsuAC {
         p += this->deviceConfig;
         p += "}";
 
-        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_outdoor_temp/config", _config.getUniqueId().c_str());
+        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/outdoor_temp/config", _config.getUniqueId().c_str());
         this->mqttClient.publish(topic, p.c_str(), true);
+        p = "{";
+        p += "\"name\":\"AC Estimated Power\",";
+        p += "\"state_topic\":\"fujitsu/" + _config.getUniqueId() + "/state/power\",";
+        p += "\"availability_topic\":\"fujitsu/" + _config.getUniqueId() + "/status\",";
+        p += "\"payload_available\":\"online\",";
+        p += "\"payload_not_available\":\"offline\",";
+        p += "\"unit_of_measurement\":\"W\",";
+        p += "\"device_class\":\"power\",";
+        p += "\"state_class\":\"measurement\",";
+        p += "\"unique_id\":\"" + _config.getUniqueId() + "_fujitsu_power\",";
+        p += "\"device\":{\"identifiers\":[\"" + _config.getUniqueId() + "_fujitsu_ac\"],\"name\":\"Fujitsu AC\"}";
+        p += "}";
+        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/power/config", _config.getUniqueId().c_str());
+        mqttClient.publish(topic, p.c_str(), true);
+
+        p = "{";
+        p += "\"name\":\"AC Estimated Energy\",";
+        p += "\"state_topic\":\"fujitsu/" + _config.getUniqueId() + "/state/energy\",";
+        p += "\"availability_topic\":\"fujitsu/" + _config.getUniqueId() + "/status\",";
+        p += "\"payload_available\":\"online\",";
+        p += "\"payload_not_available\":\"offline\",";
+        p += "\"unit_of_measurement\":\"kWh\",";
+        p += "\"device_class\":\"energy\",";
+        p += "\"state_class\":\"total_increasing\",";
+        p += "\"unique_id\":\"" + _config.getUniqueId() + "_fujitsu_energy\",";
+        p += "\"device\":{\"identifiers\":[\"" + _config.getUniqueId() + "_fujitsu_ac\"],\"name\":\"Fujitsu AC\"}";
+        p += "}";
+        snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/energy/config", _config.getUniqueId().c_str());
+        mqttClient.publish(topic, p.c_str(), true);
 
         this->debug("info", "Base entities registered");
     }
@@ -911,5 +949,221 @@ namespace FujitsuAC {
             this->lastAction = nextAction;
             IMqttBridge::publishState("action", nextAction);
         }
+    }
+
+    void TFSXW1Bridge::resetEnergy() {
+        _energyKwh = 0.0f;
+
+        _prefs.begin("fujitsu_energy", false);
+        _prefs.putFloat("total-kwh", 0.0f);
+        _prefs.end();
+
+        IMqttBridge::publishState("energy", "0.0000");
+
+        this->debug("info", "Estimated energy counter reset");
+    }
+
+    void TFSXW1Bridge::updateEnergyEstimate(uint32_t now) {
+        if (_controller == nullptr) {
+            return;
+        }
+
+        RegistryTable::Register *modeReg = _controller->getRegister(TFSXW1Controller::Address::Mode);
+        RegistryTable::Register *fanReg = _controller->getRegister(TFSXW1Controller::Address::FanSpeed);
+        RegistryTable::Register *setpointReg = _controller->getRegister(TFSXW1Controller::Address::SetpointTemp);
+        RegistryTable::Register *actualReg = _controller->getRegister(TFSXW1Controller::Address::ActualTemp);
+
+        if (modeReg == nullptr || setpointReg == nullptr || actualReg == nullptr) {
+            return;
+        }
+
+        if (setpointReg->value == 0xFFFF || actualReg->value == 0xFFFF) {
+            return;
+        }
+
+        const TFSXW1Enums::Mode mode = static_cast<TFSXW1Enums::Mode>(modeReg->value);
+        const TFSXW1Enums::FanSpeed fan = fanReg != nullptr
+                                              ? static_cast<TFSXW1Enums::FanSpeed>(fanReg->value)
+                                              : TFSXW1Enums::FanSpeed::Auto;
+
+        const float targetTemp = setpointReg->value / 10.0f;
+        const float actualTemp = (static_cast<int>(actualReg->value) - 5025) / 100.0f;
+        if (_lastUpdate == 0) {
+            _lastUpdate = now;
+            return;
+        }
+
+        const uint32_t elapsed = now - _lastUpdate;
+        if (elapsed < 10000) {
+            return;
+        }
+
+        const float estimatedPower = !_controller->isPoweredOn()
+                ? _config.getStandbyPower()
+                : estimatePower(mode, fan, targetTemp, actualTemp);
+
+        _powerWatts = estimatedPower;
+        const float elapsedHours = elapsed / 3600000.0f;
+
+        _energyKwh += (_powerWatts / 1000.0f) * elapsedHours;
+
+        _lastUpdate = now;
+
+        if ((now - _lastSave) >= 60000) {
+            _prefs.begin("fujitsu_energy", false);
+            _prefs.putFloat("total-kwh", _energyKwh);
+            _prefs.end();
+
+            _lastSave = now;
+        }
+
+        IMqttBridge::publishState("power", String(_powerWatts, 1).c_str());
+        IMqttBridge::publishState("energy", String(_energyKwh, 4).c_str());
+    }
+
+    float TFSXW1Bridge::estimatePower(TFSXW1Enums::Mode mode,
+                                      TFSXW1Enums::FanSpeed fan,
+                                      float targetTemp,
+                                      float actualTemp) {
+        const float standby = _config.getStandbyPower();
+        const float coolRated = _config.getNominalCoolPower();
+        const float heatRated = _config.getNominalHeatPower();
+
+        if (!_controller->isPoweredOn()) {
+            return standby;
+        }
+
+        if (mode == TFSXW1Enums::Mode::Fan) {
+            switch (fan) {
+                case TFSXW1Enums::FanSpeed::Quiet: return 12.0f;
+                case TFSXW1Enums::FanSpeed::Low: return 18.0f;
+                case TFSXW1Enums::FanSpeed::Medium: return 28.0f;
+                case TFSXW1Enums::FanSpeed::High: return 40.0f;
+                case TFSXW1Enums::FanSpeed::Auto:
+                default: return 22.0f;
+            }
+        }
+
+        if (mode == TFSXW1Enums::Mode::Dry) {
+            if (coolRated <= 0.0f) {
+                return standby;
+            }
+
+            return coolRated * 0.30f;
+        }
+
+        float rated = 0.0f;
+
+    switch (mode) {
+        case TFSXW1Enums::Mode::Cool:
+            rated = coolRated; break;
+        case TFSXW1Enums::Mode::Heat:
+            rated = heatRated; break;
+        case TFSXW1Enums::Mode::Auto:
+            if (actualTemp > targetTemp) {
+                rated = coolRated;
+            }
+            else if (actualTemp < targetTemp) {
+                rated = heatRated;
+            }
+            else {
+                return standby;
+            }
+
+            break;
+
+        default:
+            return standby;
+        }
+
+        if (rated <= 0.0f) {
+            return standby;
+        }
+
+        const float deltaT = fabsf(actualTemp - targetTemp);
+        constexpr float DEAD_BAND = 0.5f;
+        if (deltaT <= DEAD_BAND) {
+            return standby;
+        }
+        const float effectiveDelta = deltaT - DEAD_BAND;
+        float load = 0.0f;
+
+        if (effectiveDelta <= 0.5f) {
+            load = 0.20f;
+        }
+        else if (effectiveDelta <= 1.0f) {
+            load = 0.30f;
+        }
+        else if (effectiveDelta <= 2.0f) {
+            load = 0.45f;
+        }
+        else if (effectiveDelta <= 3.0f) {
+            load = 0.65f;
+        }
+        else if (effectiveDelta <= 4.0f) {
+            load = 0.82f;
+        }
+        else {
+            load = 1.00f;
+        }
+
+        float power = rated * load;
+
+        if (power < standby) {
+            power = standby;
+        }
+
+        return power;
+    }
+
+    String TFSXW1Bridge::getMode() {
+        if (_controller == nullptr) return "Auto";
+        RegistryTable::Register *reg = _controller->getRegister(TFSXW1Controller::Address::Mode);
+        if (reg == nullptr) return "Auto";
+        if(!_controller->isPoweredOn()) return "Off";
+        switch (static_cast<TFSXW1Enums::Mode>(reg->value)) {
+            case TFSXW1Enums::Mode::Cool: return "Cool";
+            case TFSXW1Enums::Mode::Dry: return "Dry";
+            case TFSXW1Enums::Mode::Fan: return "Fan Only";
+            case TFSXW1Enums::Mode::Heat: return "Heat";
+            default: return "Auto";
+        }
+    }
+
+    String TFSXW1Bridge::getFan() {
+        if (_controller == nullptr) return "Auto";
+        RegistryTable::Register *reg = _controller->getRegister(TFSXW1Controller::Address::FanSpeed);
+        if (reg == nullptr) return "Auto";
+        switch (static_cast<TFSXW1Enums::FanSpeed>(reg->value)) {
+            case TFSXW1Enums::FanSpeed::Quiet: return "Quiet";
+            case TFSXW1Enums::FanSpeed::Low: return "Low";
+            case TFSXW1Enums::FanSpeed::Medium: return "Medium";
+            case TFSXW1Enums::FanSpeed::High: return "High";
+            default: return "Auto";
+        }
+    }
+
+    float TFSXW1Bridge::getTargetTemp() {
+        if (_controller == nullptr) return 0.0f;
+        RegistryTable::Register *reg = _controller->getRegister(TFSXW1Controller::Address::SetpointTemp);
+        return reg != nullptr ? reg->value / 10.0f : 0.0f;
+    }
+
+    float TFSXW1Bridge::getRoomTemp() {
+        if (_controller == nullptr) return 0.0f;
+        RegistryTable::Register *reg = _controller->getRegister(TFSXW1Controller::Address::ActualTemp);
+        return reg != nullptr ? (static_cast<int>(reg->value) - 5025) / 100.0f : 0.0f;
+    }
+
+    float TFSXW1Bridge::getPowerWatts() {
+        return _powerWatts;
+    }
+
+    float TFSXW1Bridge::getEnergyKwh() {
+        return _energyKwh;
+    }
+
+    bool TFSXW1Bridge::isCommunicationOk() {
+        return _controller != nullptr && _controller->isCommunicationOk();
     }
 }

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Fujitsu / Atlantic</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="container">
+    <section class="card">
+        <header class="header">
+            <div class="brand">
+                <div class="brand-icon">❄</div>
+                <div><h1>Fujitsu / Atlantic</h1>
+                    <div id="subtitle" class="subtitle">UNKNOWN</div>
+                </div>
+            </div>
+            <div id="connection" class="badge off"><span class="dot"></span>Communication unavailable</div>
+        </header>
+        <div class="main-status">
+            <div class="power-title">Air conditioning</div>
+            <div id="powerBadge" class="badge off">OFF</div>
+        </div>
+        <div class="info-grid">
+            <div class="info-item"><span class="label">Room temperature</span><span id="room" class="value big">—</span></div>
+            <div class="info-item"><span class="label">Setpoint</span><span id="target" class="value big">—</span></div>
+            <div class="info-item"><span class="label">Estimated power</span><span id="powerW" class="value">—</span></div>
+            <div class="info-item"><span class="label">Estimated energy</span><span id="energyKwh" class="value">—</span></div>
+        </div>
+        <div class="controls">
+            <div class="control-row">
+                <button class="btn btn-light temp-btn" data-cmd="TEMP_DOWN">−</button>
+                <div id="tempControl" class="temp-value">—</div>
+                <button class="btn btn-light temp-btn" data-cmd="TEMP_UP">+</button>
+            </div>
+            <div class="grid2">
+                <div><label class="label">Mode</label><select id="modeSelect" class="select">
+                    <option value="off">Off</option>
+                    <option value="auto">Auto</option>
+                    <option value="cool">Cool</option>
+                    <option value="dry">Dry</option>
+                    <option value="fan_only">Fan Only</option>
+                    <option value="heat">Heat</option>
+                </select></div>
+                <div><label class="label">Fan</label><select id="fanSelect" class="select">
+                    <option value="auto">Auto</option>
+                    <option value="quiet">Quiet</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                </select></div>
+            </div>
+        </div>
+    </section>
+    <section class="card">
+        <div class="links"><a href="/restart">Restart</a></div>
+    </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

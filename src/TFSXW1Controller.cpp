@@ -623,6 +623,10 @@ namespace FujitsuAC {
         return static_cast<uint16_t>(TFSXW1Enums::EconomyMode::On) == reg->value;
     }
 
+    bool TFSXW1Controller::isCommunicationOk() {
+        return this->initialized && FrameType::None != this->lastFrameSent && FrameType::Init1 != this->lastFrameSent;
+    }
+
     void TFSXW1Controller::setEnergySavingFan(TFSXW1Enums::EnergySavingFan energySavingFan) {
         if (this->frameSendRegistries.size > 0) {
             return;

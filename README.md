@@ -158,6 +158,24 @@ LED's connection (optional, resistors must be choosen according your leds) <br/>
 
 *Additional button can be used for credentials reset functionality - uncomment RESET_BUTTON and set to corresponding pin. When you press this button (pull corresponding pin to GND) - controller deletes given credentials, reboots and goes to point*
 
+#### Building with PlatformIO
+
+This repository includes `platformio.ini`. To build the Arduino MQTT controller example with PlatformIO:
+
+```sh
+python -m esptool --chip esp32s3 flash_id
+pio run -e esp32 -t erase
+pio run -e esp32 -t clean 
+pio run -e esp32 -t upload
+```
+
+Upload OTA
+```sh
+$env:OTA_PASSWORD="ota_password"       
+pio run -e esp32 -t uploadfs --upload-port 192.168.0.15
+pio run -e esp32 -t upload --upload-port 192.168.0.15
+```
+
 #### Configuring credentials
 1. When controller boots up, it will create access point *faircon-uniqueId*
 2. Connect to this access point with your computer/mobile phone
