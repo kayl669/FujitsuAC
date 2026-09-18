@@ -11,6 +11,12 @@
 #include <WiFi.h>
 
 namespace FujitsuAC {
+	struct FujitsuProfile {
+		const char *id;
+		float coolingPowerW;
+		float heatingPowerW;
+		float standbyW;
+	};
 
     class Config {
     	public:
@@ -66,6 +72,10 @@ namespace FujitsuAC {
     		String getDeviceName() { return _deviceName; }
     		String getOtaPw() { return _otaPw; }
     		String getProtocol() { return _protocol; }
+		    float getStandbyPower() const { return _standbyPower; };
+		    String getClimProfileId() const { return _clim_profile_id; };
+		    float getNominalCoolPower() const { return _nominalCoolPower; };
+		    float getNominalHeatPower() const { return _nominalHeatPower; };
 
         private:
             Preferences _preferences;
@@ -90,12 +100,17 @@ namespace FujitsuAC {
             String _deviceName;
             String _otaPw;
             String _protocol;
-            
+		    String _clim_profile_id;
+		    float _standbyPower;
+		    float _nominalCoolPower;
+		    float _nominalHeatPower;
+
             bool _ledsOn = true;
             bool _wifiSleepEnabled = true;
             bool _lowCpuSpeedEnabled = true;
 
             void generateUniqueId();
     };
-
+	extern const FujitsuProfile FUJITSU_PROFILES[];
+	extern const size_t FUJITSU_PROFILE_COUNT;
 }

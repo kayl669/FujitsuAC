@@ -210,6 +210,7 @@ namespace FujitsuAC {
             
             bool isPowerfulEnabled();
             bool isEconomyEnabled();
+            bool isCommunicationOk();
             int getVerticalAirflowDirectionCount();
             int getHorizontalAirflowDirectionCount();
 
