@@ -24,6 +24,14 @@ namespace FujitsuAC {
             void loop() override;
             void onRegisterChange(const RegistryTable::Register *reg);
 
+            String getMode() override;
+            String getFan() override;
+            float getTargetTemp() override;
+            float getRoomTemp() override;
+            float getPowerWatts() override;
+            float getEnergyKwh() override;
+            bool isCommunicationOk();
+
         protected:
             const char* getProtocolName() override {
                 return "UTY-TFSXW1";
@@ -38,6 +46,11 @@ namespace FujitsuAC {
             bool isPoweringOn = false;
             uint32_t powerOnRetryStartedMillis = 0;
             static constexpr uint32_t powerOnRetryTimeoutMillis = 60000;
+            float _powerWatts = 0.0f;
+            float _energyKwh = 0.0f;
+            Preferences _prefs;
+            uint32_t _lastUpdate = 0;
+            uint32_t _lastSave = 0;
 
             void startPowerOnRetry();
             void stopPowerOnRetry();
@@ -47,6 +60,9 @@ namespace FujitsuAC {
             void registerSwitch(TFSXW1Controller::Address address);
             void publishState(uint16_t address, const char* value);
             void publishActionState();
+            void resetEnergy();
+            void updateEnergyEstimate(uint32_t now);
+            float estimatePower(TFSXW1Enums::Mode mode, TFSXW1Enums::FanSpeed fan, float targetTemp, float actualTemp);
 
             String lastAction = "";
 

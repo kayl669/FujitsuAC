@@ -11,7 +11,6 @@
 #include <WiFi.h>
 #include "esp_system.h"
 #include "Config.h"
-#include "NetworkUpdater.h"
 #include "Uart.h"
 
 namespace FujitsuAC {
@@ -30,15 +29,6 @@ namespace FujitsuAC {
 
             virtual void setup() {
                 this->configureMqtt();
-
-                this->networkUpdater = new NetworkUpdater();
-                this->networkUpdater->setDebugCallback([this](const char* name, const char* message) {
-                    this->debug(name, message);
-                });
-
-                this->networkUpdater->setOnVersionReceivedCallback([this](const char* version) {
-                    this->publishState("latest_version", version);
-                });
             }
 
             void configureMqtt() {
@@ -68,9 +58,38 @@ namespace FujitsuAC {
             }
 
             virtual void loop() {
-                this->networkUpdater->loop();
                 this->sendDiagnosticData();
             }
+
+            virtual String getMode() {
+                return "Auto";
+            }
+
+            virtual String getFan() {
+                return "Auto";
+            }
+
+            virtual float getTargetTemp() {
+                return 0.0f;
+            }
+
+            virtual float getRoomTemp() {
+                return 0.0f;
+            }
+
+            virtual float getPowerWatts() {
+                return 0.0f;
+            }
+
+            virtual float getEnergyKwh() {
+                return 0.0f;
+            }
+
+            virtual bool isCommunicationOk() {
+                return false;
+            }
+
+            virtual void handleMqttCommand(const char *property, const char *payload) = 0;
 
             void publishState(const char* name, const char* value) {
                 char topic[64];
@@ -82,7 +101,7 @@ namespace FujitsuAC {
             void debug(const char* name, const char* message) {
                 if (strcmp(name, "status") == 0) {
                     this->publishState(name, message);
-                    
+
                     return;
                 }
 
@@ -107,7 +126,6 @@ namespace FujitsuAC {
             UartStatus _uartStatus = UartStatus::Start;
 
             virtual const char* getProtocolName() = 0;
-            virtual void handleMqttCommand(const char *property, const char *payload) = 0;
             virtual void initializeController() = 0;
             
             void initializeUart() {
@@ -145,8 +163,6 @@ namespace FujitsuAC {
         private:
             uint32_t _uartTimer = 0;
 
-            NetworkUpdater* networkUpdater = nullptr;
-
             uint32_t lastDiagnosticReportMillis = -60000;
 
             void createDeviceConfig() {
@@ -176,7 +192,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_status/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/status/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -191,7 +207,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_name/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/name/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -208,7 +224,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_wifi_rssi/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/wifi_rssi/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -223,7 +239,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_ip/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/ip/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -238,7 +254,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_mac/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/mac/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -253,7 +269,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_version/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/version/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -268,7 +284,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_latest_version/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/latest_version/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -283,7 +299,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_protocol/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/protocol/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -299,7 +315,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_reset_reason/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/reset_reason/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 p = "{";
@@ -316,7 +332,7 @@ namespace FujitsuAC {
                 p += this->deviceConfig;
                 p += "}";
 
-                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s_cpu_temp/config", _config.getUniqueId().c_str());
+                snprintf(topic, sizeof(topic), "homeassistant/sensor/%s/cpu_temp/config", _config.getUniqueId().c_str());
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 this->debug("info", "Diagnostic entities registered");
@@ -335,23 +351,6 @@ namespace FujitsuAC {
                 p += "}";
 
                 snprintf(topic, sizeof(topic), "homeassistant/button/%s_%s/config", _config.getUniqueId().c_str(), "restart");
-                this->mqttClient.publish(topic, p.c_str(), true);
-
-                p = "{";
-                p += "\"name\": \"update_firmware\",";
-                p += "\"icon\": \"mdi:update\",";
-                p += "\"unique_id\": \"" + _config.getUniqueId() + "_update_firmware\",";
-                p += "\"availability_topic\": \"fujitsu/" + _config.getUniqueId() + "/status\",";
-                p += "\"payload_available\": \"online\",";
-                p += "\"payload_not_available\": \"offline\",";
-                p += "\"command_topic\": \"fujitsu/" + _config.getUniqueId() + "/set/update_firmware\",";
-                p += "\"entity_category\": \"config\",";
-                p += "\"payload_press\": \"master\",";
-                
-                p += this->deviceConfig;
-                p += "}";
-
-                snprintf(topic, sizeof(topic), "homeassistant/button/%s_%s/config", _config.getUniqueId().c_str(), "update_firmware");
                 this->mqttClient.publish(topic, p.c_str(), true);
 
                 if (_config.getLedRPin() > 0) {
@@ -496,12 +495,6 @@ namespace FujitsuAC {
 
                     delay(1000);
                     ESP.restart();
-
-                    return;
-                }
-
-                if (0 == strcmp(property, "update_firmware")) {
-                    this->networkUpdater->updateFirmware(payload);
 
                     return;
                 }
